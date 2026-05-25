@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { loginSchema, LoginFormData } from '@/validations'
+import { registerSchema, RegisterFormData } from '@/validations'
 import { authService } from '@/api/auth'
 
-export function LoginPage() {
+export function RegisterPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -18,19 +18,23 @@ export function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
   })
 
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true)
     setError('')
+
     try {
-      const response = await authService.login(data)
+      const response = await authService.register({
+        ...data,
+        role: 'ADMIN',
+      })
       localStorage.setItem('admin_token', response.token)
       window.location.href = '/dashboard'
     } catch (err) {
-      let errorMessage = 'Login failed'
+      let errorMessage = 'Registration failed'
       if (err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data) {
         errorMessage = String(err.response.data.message)
       }
@@ -45,7 +49,7 @@ export function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-blue-600">Kios Admin</CardTitle>
-          <CardDescription>Enter your credentials to access the admin dashboard</CardDescription>
+          <CardDescription>Create an admin account to access the dashboard</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -54,6 +58,13 @@ export function LoginPage() {
                 {error}
               </div>
             )}
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input id="name" placeholder="Admin Name" {...register('name')} />
+              {errors.name && (
+                <p className="text-sm text-red-600">{errors.name.message}</p>
+              )}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -80,13 +91,13 @@ export function LoginPage() {
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In
+              Register as Admin
             </Button>
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
-            Need an admin account?{' '}
-            <Link to="/register" className="font-medium text-blue-600 hover:underline">
-              Register here
+            Already have an account?{' '}
+            <Link to="/login" className="font-medium text-blue-600 hover:underline">
+              Sign in
             </Link>
           </p>
         </CardContent>

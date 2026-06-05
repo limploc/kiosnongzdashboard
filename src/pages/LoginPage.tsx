@@ -30,6 +30,7 @@ export function LoginPage() {
       localStorage.setItem('admin_token', response.token)
       window.location.href = '/dashboard'
     } catch (err) {
+      console.error('[Login] Error:', err)
       let errorMessage = 'Login failed'
       if (err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data) {
         errorMessage = String(err.response.data.message)

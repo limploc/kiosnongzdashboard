@@ -41,6 +41,7 @@ export function ProductsPage() {
   const [search, setSearch] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
   const [page, setPage] = useState(1)
 
   const { data: productsData, isLoading } = useQuery({
@@ -55,12 +56,6 @@ export function ProductsPage() {
 
   const createMutation = useMutation({
     mutationFn: (data: CreateProductRequest) => productService.createProduct(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['products'] })
-      setIsOpen(false)
-      reset()
-      toast.success('Product created successfully')
-    },
     onError: () => {
       toast.error('Failed to create product')
     },
@@ -110,11 +105,32 @@ export function ProductsPage() {
     },
   })
 
-  const onSubmit = (data: ProductFormData) => {
+  const onSubmit = async (data: ProductFormData) => {
     if (editingId) {
       updateMutation.mutate({ id: editingId, data })
-    } else {
-      createMutation.mutate(data)
+      return
+    }
+
+    try {
+      const createdProduct = await createMutation.mutateAsync(data)
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Product created successfully')
+
+      if (selectedImageFile) {
+        try {
+          await productService.uploadImage(createdProduct.id, selectedImageFile)
+          queryClient.invalidateQueries({ queryKey: ['products'] })
+          toast.success('Product image uploaded successfully')
+        } catch {
+          toast.error('Product was created, but image upload failed')
+        }
+      }
+
+      setIsOpen(false)
+      setSelectedImageFile(null)
+      reset()
+    } catch {
+      toast.error('Failed to create product')
     }
   }
 
@@ -124,6 +140,7 @@ export function ProductsPage() {
     setValue('name', product.name)
     setValue('price', product.price)
     setValue('stock', product.stock)
+    setSelectedImageFile(null)
     setIsOpen(true)
   }
 
@@ -265,6 +282,7 @@ export function ProductsPage() {
         setIsOpen(open)
         if (!open) {
           setEditingId(null)
+          setSelectedImageFile(null)
           reset()
         }
       }}>
@@ -305,6 +323,19 @@ export function ProductsPage() {
               <Label>Description</Label>
               <Textarea {...register('description')} />
             </div>
+            {!editingId && (
+              <div className="space-y-2">
+                <Label>Product Image</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setSelectedImageFile(event.target.files?.[0] ?? null)}
+                />
+                <p className="text-xs text-gray-500">
+                  Optional. If omitted, the product will be created without an image.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Price</Label>

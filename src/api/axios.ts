@@ -17,12 +17,20 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+const AUTH_ENDPOINTS = ['/users/login', '/users/register']
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthRequest = error.config?.url
+      ? AUTH_ENDPOINTS.some((ep) => error.config.url.includes(ep))
+      : false
+
+    if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem('admin_token')
-      window.location.href = '/login'
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

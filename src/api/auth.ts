@@ -12,7 +12,6 @@ export interface RegisterRequest {
   password: string
   address?: string | null
   photo_profile?: string | null
-  role: 'ADMIN'
 }
 
 export const authService = {

@@ -31,3 +31,21 @@ export const categorySchema = z.object({
 })
 
 export type CategoryFormData = z.infer<typeof categorySchema>
+
+export const variantSchema = z.object({
+  name: z.string().min(1, 'Variant name is required'),
+  price: z.number().int().nonnegative('Price must be a non-negative number'),
+  stock: z.number().int().nonnegative('Stock must be a non-negative number'),
+  sku: z.string().optional().nullable(),
+})
+
+export type VariantFormData = z.infer<typeof variantSchema>
+
+export const variantUpdateSchema = z.object({
+  name: z.string().min(1, 'Variant name is required').optional(),
+  price: z.number().int().nonnegative('Price must be a non-negative number').optional(),
+  stock: z.number().int().nonnegative('Stock must be a non-negative number').optional(),
+  sku: z.string().optional().nullable(),
+})
+
+export type VariantUpdateFormData = z.infer<typeof variantUpdateSchema>

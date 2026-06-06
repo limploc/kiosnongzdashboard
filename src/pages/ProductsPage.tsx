@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, ImageIcon } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, ImageIcon, Package, ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -31,10 +31,11 @@ import {
 } from '@/components/ui/select'
 import { productService, CreateProductRequest } from '@/api/products'
 import { formatCurrency } from '@/utils'
-import { productSchema, ProductFormData } from '@/validations'
+import { productSchema, ProductFormData, variantSchema, VariantFormData, variantUpdateSchema, VariantUpdateFormData } from '@/validations'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
+import type { ProductVariant } from '@/types'
 
 export function ProductsPage() {
   const queryClient = useQueryClient()
@@ -44,6 +45,12 @@ export function ProductsPage() {
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null)
   const [page, setPage] = useState(1)
 
+  const [variantDialogOpen, setVariantDialogOpen] = useState(false)
+  const [variantProductId, setVariantProductId] = useState<string | null>(null)
+  const [variantProductName, setVariantProductName] = useState<string>('')
+  const [editingVariant, setEditingVariant] = useState<ProductVariant | null>(null)
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
+
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['products', { page, q: search }],
     queryFn: () => productService.getProducts({ page, limit: 10, q: search }),
@@ -52,6 +59,12 @@ export function ProductsPage() {
   const { data: categories } = useQuery({
     queryKey: ['categories'],
     queryFn: productService.getCategories,
+  })
+
+  const { data: variantsData, refetch: refetchVariants } = useQuery({
+    queryKey: ['variants', variantProductId],
+    queryFn: () => productService.getVariants(variantProductId!),
+    enabled: !!variantProductId && variantDialogOpen,
   })
 
   const createMutation = useMutation({
@@ -68,7 +81,7 @@ export function ProductsPage() {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       setIsOpen(false)
       setEditingId(null)
-      reset()
+      resetProduct()
       toast.success('Product updated successfully')
     },
     onError: () => {
@@ -87,13 +100,51 @@ export function ProductsPage() {
     },
   })
 
+  const createVariantMutation = useMutation({
+    mutationFn: (data: { name: string; price: number; stock: number; sku?: string | null }) =>
+      productService.createVariant(variantProductId!, data),
+    onSuccess: () => {
+      refetchVariants()
+      variantFormReset()
+      toast.success('Variant created successfully')
+    },
+    onError: () => {
+      toast.error('Failed to create variant')
+    },
+  })
+
+  const updateVariantMutation = useMutation({
+    mutationFn: (data: { name?: string; price?: number; stock?: number; sku?: string | null }) =>
+      productService.updateVariant(variantProductId!, editingVariant!.id, data),
+    onSuccess: () => {
+      refetchVariants()
+      setEditingVariant(null)
+      variantFormReset()
+      toast.success('Variant updated successfully')
+    },
+    onError: () => {
+      toast.error('Failed to update variant')
+    },
+  })
+
+  const deleteVariantMutation = useMutation({
+    mutationFn: (variantId: string) => productService.deleteVariant(variantProductId!, variantId),
+    onSuccess: () => {
+      refetchVariants()
+      toast.success('Variant deleted successfully')
+    },
+    onError: () => {
+      toast.error('Failed to delete variant')
+    },
+  })
+
   const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    watch,
-    formState: { errors },
+    register: registerProduct,
+    handleSubmit: handleProductSubmit,
+    reset: resetProduct,
+    setValue: setProductValue,
+    watch: watchProduct,
+    formState: { errors: productErrors },
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
     defaultValues: {
@@ -105,7 +156,27 @@ export function ProductsPage() {
     },
   })
 
-  const onSubmit = async (data: ProductFormData) => {
+  const {
+    register: registerVariant,
+    handleSubmit: handleVariantSubmit,
+    reset: resetVariant,
+    setValue: setVariantValue,
+    formState: { errors: variantErrors },
+  } = useForm<VariantFormData | VariantUpdateFormData>({
+    resolver: zodResolver(editingVariant ? variantUpdateSchema : variantSchema),
+    defaultValues: {
+      name: '',
+      price: 0,
+      stock: 0,
+      sku: '',
+    },
+  })
+
+  const variantFormReset = () => {
+    resetVariant()
+  }
+
+  const onProductSubmit = async (data: ProductFormData) => {
     if (editingId) {
       updateMutation.mutate({ id: editingId, data })
       return
@@ -128,29 +199,73 @@ export function ProductsPage() {
 
       setIsOpen(false)
       setSelectedImageFile(null)
-      reset()
+      resetProduct()
     } catch {
       toast.error('Failed to create product')
     }
   }
 
-  const handleEdit = (product: NonNullable<typeof productsData>['data'][0]) => {
+  const onVariantSubmit = async (data: VariantFormData | VariantUpdateFormData) => {
+    if (editingVariant) {
+      updateVariantMutation.mutate(data as VariantUpdateFormData)
+    } else {
+      createVariantMutation.mutate(data as VariantFormData)
+    }
+  }
+
+  const handleEditProduct = (product: NonNullable<typeof productsData>['data'][0]) => {
     setEditingId(product.id)
-    setValue('categoryId', product.category?.id || '')
-    setValue('name', product.name)
-    setValue('price', product.price)
-    setValue('stock', product.stock)
+    setProductValue('categoryId', product.category?.id || '')
+    setProductValue('name', product.name)
+    setProductValue('price', product.price)
+    setProductValue('stock', product.stock)
     setSelectedImageFile(null)
     setIsOpen(true)
   }
 
-  const handleDelete = (id: string) => {
+  const handleDeleteProduct = (id: string) => {
     if (confirm('Are you sure you want to delete this product?')) {
       deleteMutation.mutate(id)
     }
   }
 
-  const isSubmitting = createMutation.isPending || updateMutation.isPending
+  const handleOpenVariantDialog = (productId: string, productName: string) => {
+    setVariantProductId(productId)
+    setVariantProductName(productName)
+    setEditingVariant(null)
+    variantFormReset()
+    setVariantDialogOpen(true)
+  }
+
+  const handleCloseVariantDialog = () => {
+    setVariantDialogOpen(false)
+    setVariantProductId(null)
+    setVariantProductName('')
+    setEditingVariant(null)
+    variantFormReset()
+  }
+
+  const handleEditVariant = (variant: ProductVariant) => {
+    setEditingVariant(variant)
+    setVariantValue('name', variant.name)
+    setVariantValue('price', variant.price)
+    setVariantValue('stock', variant.stock)
+    setVariantValue('sku', variant.sku || '')
+  }
+
+  const handleDeleteVariant = (variantId: string) => {
+    if (confirm('Are you sure you want to delete this variant?')) {
+      deleteVariantMutation.mutate(variantId)
+    }
+  }
+
+  const cancelVariantEdit = () => {
+    setEditingVariant(null)
+    variantFormReset()
+  }
+
+  const isProductSubmitting = createMutation.isPending || updateMutation.isPending
+  const isVariantSubmitting = createVariantMutation.isPending || updateVariantMutation.isPending
 
   return (
     <div className="p-6">
@@ -188,6 +303,7 @@ export function ProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Image</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Category</TableHead>
@@ -199,54 +315,92 @@ export function ProductsPage() {
               </TableHeader>
               <TableBody>
                 {productsData?.data.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell>
-                      <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
-                        {product.image ? (
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            className="h-10 w-10 rounded-lg object-cover"
-                          />
-                        ) : (
-                          <ImageIcon className="h-5 w-5 text-gray-400" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{product.name}</TableCell>
-                    <TableCell>{product.category?.name || '-'}</TableCell>
-                    <TableCell>{formatCurrency(product.price)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={product.stock < 5 ? 'destructive' : 'secondary'}
-                      >
-                        {product.stock}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={product.stock > 0 ? 'success' : 'destructive'}>
-                        {product.stock > 0 ? 'In Stock' : 'Out of Stock'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                  <>
+                    <TableRow key={product.id}>
+                      <TableCell>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleEdit(product)}
+                          className="h-6 w-6"
+                          onClick={() => setExpandedProduct(expandedProduct === product.id ? null : product.id)}
                         >
-                          <Edit className="h-4 w-4" />
+                          {expandedProduct === product.id ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(product.id)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                          {product.image ? (
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="h-10 w-10 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <ImageIcon className="h-5 w-5 text-gray-400" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">{product.name}</TableCell>
+                      <TableCell>{product.category?.name || '-'}</TableCell>
+                      <TableCell>{formatCurrency(product.price)}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={product.stock < 5 ? 'destructive' : 'secondary'}
                         >
-                          <Trash2 className="h-4 w-4 text-red-600" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                          {product.stock}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={product.stock > 0 ? 'success' : 'destructive'}>
+                          {product.stock > 0 ? 'In Stock' : 'Out of Stock'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenVariantDialog(product.id, product.name)}
+                            title="Manage Variants"
+                          >
+                            <Package className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditProduct(product)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteProduct(product.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expandedProduct === product.id && (
+                      <TableRow key={`${product.id}-expanded`}>
+                        <TableCell colSpan={8} className="bg-gray-50 p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">Variants</span>
+                            <Button size="sm" onClick={() => handleOpenVariantDialog(product.id, product.name)}>
+                              <Plus className="mr-1 h-3 w-3" />
+                              Add Variant
+                            </Button>
+                          </div>
+                          <p className="text-sm text-gray-500">Click the Package icon above to manage variants for this product.</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 ))}
               </TableBody>
             </Table>
@@ -283,19 +437,19 @@ export function ProductsPage() {
         if (!open) {
           setEditingId(null)
           setSelectedImageFile(null)
-          reset()
+          resetProduct()
         }
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Edit Product' : 'Add Product'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleProductSubmit(onProductSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label>Category</Label>
               <Select
-                value={watch('categoryId')}
-                onValueChange={(value) => setValue('categoryId', value)}
+                value={watchProduct('categoryId')}
+                onValueChange={(value) => setProductValue('categoryId', value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
@@ -308,20 +462,20 @@ export function ProductsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              {errors.categoryId && (
-                <p className="text-sm text-red-600">{errors.categoryId.message}</p>
+              {productErrors.categoryId && (
+                <p className="text-sm text-red-600">{productErrors.categoryId.message}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label>Name</Label>
-              <Input {...register('name')} />
-              {errors.name && (
-                <p className="text-sm text-red-600">{errors.name.message}</p>
+              <Input {...registerProduct('name')} />
+              {productErrors.name && (
+                <p className="text-sm text-red-600">{productErrors.name.message}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
-              <Textarea {...register('description')} />
+              <Textarea {...registerProduct('description')} />
             </div>
             {!editingId && (
               <div className="space-y-2">
@@ -341,20 +495,20 @@ export function ProductsPage() {
                 <Label>Price</Label>
                 <Input
                   type="number"
-                  {...register('price', { valueAsNumber: true })}
+                  {...registerProduct('price', { valueAsNumber: true })}
                 />
-                {errors.price && (
-                  <p className="text-sm text-red-600">{errors.price.message}</p>
+                {productErrors.price && (
+                  <p className="text-sm text-red-600">{productErrors.price.message}</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label>Stock</Label>
                 <Input
                   type="number"
-                  {...register('stock', { valueAsNumber: true })}
+                  {...registerProduct('stock', { valueAsNumber: true })}
                 />
-                {errors.stock && (
-                  <p className="text-sm text-red-600">{errors.stock.message}</p>
+                {productErrors.stock && (
+                  <p className="text-sm text-red-600">{productErrors.stock.message}</p>
                 )}
               </div>
             </div>
@@ -362,11 +516,143 @@ export function ProductsPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
+              <Button type="submit" disabled={isProductSubmitting}>
+                {isProductSubmitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={variantDialogOpen} onOpenChange={(open) => {
+        if (!open) handleCloseVariantDialog()
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Variants - {variantProductName}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="border rounded-lg p-4">
+              <h3 className="text-sm font-medium mb-3">
+                {editingVariant ? 'Edit Variant' : 'Add New Variant'}
+              </h3>
+              <form onSubmit={handleVariantSubmit(onVariantSubmit)} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Name</Label>
+                    <Input
+                      placeholder="e.g., Small, Red, XL"
+                      {...registerVariant('name')}
+                    />
+                    {variantErrors.name && (
+                      <p className="text-xs text-red-600">{variantErrors.name.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <Label>SKU</Label>
+                    <Input
+                      placeholder="Optional SKU"
+                      {...registerVariant('sku')}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Price</Label>
+                    <Input
+                      type="number"
+                      {...registerVariant('price', { valueAsNumber: true })}
+                    />
+                    {variantErrors.price && (
+                      <p className="text-xs text-red-600">{variantErrors.price.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Stock</Label>
+                    <Input
+                      type="number"
+                      {...registerVariant('stock', { valueAsNumber: true })}
+                    />
+                    {variantErrors.stock && (
+                      <p className="text-xs text-red-600">{variantErrors.stock.message}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" disabled={isVariantSubmitting}>
+                    {isVariantSubmitting ? 'Saving...' : editingVariant ? 'Update Variant' : 'Add Variant'}
+                  </Button>
+                  {editingVariant && (
+                    <Button type="button" variant="outline" size="sm" onClick={cancelVariantEdit}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium mb-2">Existing Variants ({variantsData?.length || 0})</h3>
+              {variantsData && variantsData.length > 0 ? (
+                <div className="space-y-2">
+                  {variantsData.map((variant) => (
+                    <div key={variant.id} className="flex items-center justify-between border rounded-lg p-3">
+                      <div className="flex-1 grid grid-cols-4 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-500">Name:</span>
+                          <span className="ml-1 font-medium">{variant.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">SKU:</span>
+                          <span className="ml-1">{variant.sku || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Price:</span>
+                          <span className="ml-1">{formatCurrency(variant.price)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Stock:</span>
+                          <Badge
+                            className="ml-1"
+                            variant={variant.stock < 5 ? 'destructive' : 'secondary'}
+                          >
+                            {variant.stock}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 ml-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditVariant(variant)}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteVariant(variant.id)}
+                        >
+                          <Trash2 className="h-3 w-3 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  No variants yet. Add one using the form above.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseVariantDialog}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

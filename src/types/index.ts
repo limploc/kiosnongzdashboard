@@ -30,12 +30,6 @@ export interface Product {
   category?: Category
 }
 
-export interface ProductDetail extends Product {
-  description?: string | null
-  images: string[]
-  category: Category
-}
-
 export interface PaginationMeta {
   page: number
   limit: number
@@ -177,4 +171,22 @@ export interface Customer {
   photo_profile?: string | null
   created_at: string
   orderCount?: number
+}
+
+export interface ProductVariant {
+  id: string
+  productId: string
+  name: string
+  price: number
+  stock: number
+  sku?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProductDetail extends Product {
+  description?: string | null
+  images: string[]
+  category: Category
+  variants: ProductVariant[]
 }

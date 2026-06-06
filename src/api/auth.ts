@@ -10,6 +10,7 @@ export interface RegisterRequest {
   name: string
   email: string
   password: string
+  role?: string
   address?: string | null
   photo_profile?: string | null
 }
